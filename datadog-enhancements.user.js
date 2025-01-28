@@ -15,11 +15,20 @@
     'use strict';
 
     let currentColumns = 1;
+    let gridObserver;
+    let menuObserver;
 
     function updateColumns(count) {
         const gridElement = document.querySelector('.druids_layout_grid.druids_margin--top-lg.druids_margin--bottom-lg');
         if (gridElement) {
             gridElement.style.setProperty('--grid-columns-count', count);
+        }
+    }
+
+    function checkAndApplyColumns() {
+        const gridElement = document.querySelector('.druids_layout_grid.druids_margin--top-lg.druids_margin--bottom-lg');
+        if (gridElement) {
+            updateColumns(currentColumns);
         }
     }
 
@@ -88,12 +97,12 @@
             right: 0,
             backgroundColor: '#1d1c1f',
             border: '1px solid #598acb',
-            borderRadius: '5px', // Increased border radius
+            borderRadius: '5px',
             marginTop: '4px',
             zIndex: '99999',
             boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
             color: 'white',
-            overflow: 'hidden' // Crucial for containing rounded corners
+            overflow: 'hidden'
         });
 
         // Add options
@@ -106,10 +115,9 @@
                 backgroundColor: '#1d1c1f',
                 fontSize: '13px',
                 color: 'white',
-                transition: 'background-color 0.2s ease' // Smooth transition
+                transition: 'background-color 0.2s ease'
             });
 
-            // Hover effects
             option.addEventListener('mouseover', () => {
                 option.style.backgroundColor = '#598acb';
             });
@@ -120,13 +128,14 @@
             option.addEventListener('click', () => {
                 currentColumns = i;
                 valueLabel.textContent = i;
-                updateColumns(i);
+                checkAndApplyColumns();
                 dropdownMenu.style.display = 'none';
                 button.classList.remove('is-open');
             });
 
             dropdownMenu.appendChild(option);
         }
+
         // Toggle dropdown
         button.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -148,46 +157,64 @@
         // Robust insertion logic
         function insertDropdown() {
             const reverseToggle = document.querySelector('.druids_form_toggle-switch');
-            if (!reverseToggle) {
-                console.log('Reverse toggle not found');
-                return;
-            }
+            if (!reverseToggle) return;
 
-            // Check if already inserted
-            if (document.querySelector('.dd-columns-selector')) {
-                return;
-            }
+            if (document.querySelector('.dd-columns-selector')) return;
 
-            // Create new vertical separator (before the "Columns:" label)
             const separator = document.createElement('div');
             separator.className = 'druids_margin--left-sm druids_margin--right-sm druids_layout_vertical-separator druids_layout_vertical-separator--md';
 
-            // Insert container & separator AFTER the Reverse toggle, but place the
-            // separator immediately before the new container.
             reverseToggle.parentNode.insertBefore(container, reverseToggle.nextSibling);
             container.parentNode.insertBefore(separator, container);
-
-            // Add marker class
             container.classList.add('dd-columns-selector');
         }
 
-        // Initial insertion attempt
-        insertDropdown();
-
-        // Observer configuration
-        const observer = new MutationObserver(() => {
+        // Menu observer for dynamic UI changes
+        menuObserver = new MutationObserver(() => {
             if (!document.querySelector('.dd-columns-selector')) {
                 insertDropdown();
             }
         });
 
-        observer.observe(document.body, {
+        menuObserver.observe(document.body, {
             childList: true,
             subtree: true
         });
+
+        // Initial insertion
+        insertDropdown();
     }
 
-    // Initialize
-    createColumnDropdown();
-    updateColumns(currentColumns);
+    // Initialize grid observer
+    function initGridObserver() {
+        gridObserver = new MutationObserver(checkAndApplyColumns);
+        gridObserver.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+        checkAndApplyColumns();
+    }
+
+    // Cleanup observers
+    function cleanupObservers() {
+        if (gridObserver) gridObserver.disconnect();
+        if (menuObserver) menuObserver.disconnect();
+    }
+
+    // Initialize everything
+    function init() {
+        cleanupObservers();
+        createColumnDropdown();
+        initGridObserver();
+    }
+
+    // Start when ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+
+    // Reinitialize when navigation occurs
+    window.addEventListener('spa:page-changed', init);
 })();
