@@ -2,8 +2,8 @@
 // @name         DataDog Enhancements
 // @namespace    com.azzo.datadog
 // @version      1.0.0
-// @downloadURL  https://github.com/AZZO/timeslice-colourifier/raw/main/datadog-enhancements.user.js
-// @updateURL    https://github.com/AZZO/timeslice-colourifier/raw/main/datadog-enhancements.user.js
+// @downloadURL  https://github.com/AZZO/datadog-enhancements/raw/main/datadog-enhancements.user.js
+// @updateURL    https://github.com/AZZO/datadog-enhancements/raw/main/datadog-enhancements.user.js
 // @description  Add a drop-down to control the number of columns (1-10) on Datadog's Metric Explorer
 // @match        https://*.datadoghq.com/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=datadoghq.com
