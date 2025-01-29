@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DataDog Enhancements
 // @namespace    com.azzo.datadog
-// @version      2.0.0
+// @version      2.0.1
 // @downloadURL  https://github.com/AZZO/datadog-enhancements/raw/main/datadog-enhancements.user.js
 // @updateURL    https://github.com/AZZO/datadog-enhancements/raw/main/datadog-enhancements.user.js
 // @description  Add a drop-down to control columns and sync graph cursors
@@ -18,10 +18,14 @@
     let currentColumns = 1;
     let gridObserver;
     let menuObserver;
+    let graphObserver;
 
     // Cursor sync variables
     let activeGraph = null;
     let cursorSyncEnabled = true;
+
+    // Track which graphs have listeners
+    const graphListeners = new WeakSet();
 
     // Column control functions
     function updateColumns(count) {
@@ -59,20 +63,32 @@
 
     function handleGraphMouseover(event) {
         if (!cursorSyncEnabled) return;
-        const graphContainer = event.target.closest('[class*="graph"]');
+        const graphContainer = event.currentTarget;
         if (!graphContainer) return;
         activeGraph = graphContainer;
     }
 
     function handleGraphMouseout(event) {
         if (!cursorSyncEnabled) return;
-        if (!event.relatedTarget?.closest('[class*="graph"]')) {
+        const relatedTarget = event.relatedTarget;
+        // More defensive check
+        if (!relatedTarget || !relatedTarget.closest('[class*="graph"]')) {
             activeGraph = null;
             const allCursors = document.querySelectorAll('.dataviz_plot-ts-cursor');
             allCursors.forEach(cursor => {
                 cursor.style.visibility = 'hidden';
             });
         }
+    }
+
+    function attachGraphListeners(graph) {
+        if (graphListeners.has(graph)) return; // only attach once
+
+        graph.addEventListener('mouseover', handleGraphMouseover);
+        graph.addEventListener('mouseout', handleGraphMouseout);
+        graph.addEventListener('mousemove', updateAllCursors);
+
+        graphListeners.add(graph);
     }
 
     function createControls() {
@@ -93,7 +109,7 @@
         selectWrapper.className = 'druids_form_select-wrapper druids_form_select-wrapper--is-multi-line';
         selectWrapper.style.position = 'relative';
 
-        // Button and dropdown setup (unchanged from original)
+        // Button and dropdown setup
         const button = document.createElement('button');
         button.className = 'Select druids_form_select druids_form_select--xs druids_form_select--is-borderless druids_form_select--has-arrow has-value is-searchable Select--single is-closed';
         button.type = 'button';
@@ -255,33 +271,34 @@
         insertControls();
     }
 
-    // Initialize graph event listeners
-    function initGraphEvents() {
-        const graphs = document.querySelectorAll('[class*="graph"]');
-        graphs.forEach(graph => {
-            graph.addEventListener('mouseover', handleGraphMouseover);
-            graph.addEventListener('mouseout', handleGraphMouseout);
-            graph.addEventListener('mousemove', updateAllCursors);
+    // Instead of scanning exactly each added node, do a full re-scan for `[class*="graph"]`
+    function initGraphObserver() {
+        if (graphObserver) {
+            graphObserver.disconnect();
+        }
+
+        // Attach to all existing graphs right now
+        document.querySelectorAll('[class*="graph"]').forEach(attachGraphListeners);
+
+        // On ANY mutation, re-check for new graphs
+        graphObserver = new MutationObserver(() => {
+            document.querySelectorAll('[class*="graph"]').forEach(attachGraphListeners);
+        });
+
+        graphObserver.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true  // no attributeFilter, so we catch all changes
         });
     }
 
     // Initialize grid observer
     function initGridObserver() {
-        gridObserver = new MutationObserver((mutations) => {
-            checkAndApplyColumns();
-            mutations.forEach((mutation) => {
-                mutation.addedNodes.forEach((node) => {
-                    if (node.nodeType === 1) {
-                        const graphs = node.querySelectorAll('[class*="graph"]');
-                        graphs.forEach(graph => {
-                            graph.addEventListener('mouseover', handleGraphMouseover);
-                            graph.addEventListener('mouseout', handleGraphMouseout);
-                            graph.addEventListener('mousemove', updateAllCursors);
-                        });
-                    }
-                });
-            });
-        });
+        if (gridObserver) {
+            gridObserver.disconnect();
+        }
+
+        gridObserver = new MutationObserver(checkAndApplyColumns);
 
         gridObserver.observe(document.body, {
             childList: true,
@@ -295,13 +312,14 @@
     function cleanupObservers() {
         if (gridObserver) gridObserver.disconnect();
         if (menuObserver) menuObserver.disconnect();
+        if (graphObserver) graphObserver.disconnect();
     }
 
     // Initialize everything
     function init() {
         cleanupObservers();
         createControls();
-        initGraphEvents();
+        initGraphObserver();
         initGridObserver();
     }
 
@@ -312,6 +330,6 @@
         init();
     }
 
-    // Reinitialize when navigation occurs
+    // Reinitialize when navigation occurs (SPA)
     window.addEventListener('spa:page-changed', init);
 })();
