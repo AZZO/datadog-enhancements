@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         DataDog Enhancements
 // @namespace    com.azzo.datadog
-// @version      1.0.0
+// @version      2.0.0
 // @downloadURL  https://github.com/AZZO/datadog-enhancements/raw/main/datadog-enhancements.user.js
 // @updateURL    https://github.com/AZZO/datadog-enhancements/raw/main/datadog-enhancements.user.js
-// @description  Add a drop-down to control the number of columns (1-10) on Datadog's Metric Explorer
+// @description  Add a drop-down to control columns and sync graph cursors
 // @match        https://*.datadoghq.com/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=datadoghq.com
 // @author       Luke Ballantyne + AI
@@ -14,10 +14,16 @@
 (function() {
     'use strict';
 
+    // Column control variables
     let currentColumns = 1;
     let gridObserver;
     let menuObserver;
 
+    // Cursor sync variables
+    let activeGraph = null;
+    let cursorSyncEnabled = true;
+
+    // Column control functions
     function updateColumns(count) {
         const gridElement = document.querySelector('.druids_layout_grid.druids_margin--top-lg.druids_margin--bottom-lg');
         if (gridElement) {
@@ -32,7 +38,44 @@
         }
     }
 
-    function createColumnDropdown() {
+    // Cursor sync functions
+    function updateAllCursors() {
+        if (!cursorSyncEnabled || !activeGraph) return;
+
+        const activeCursor = activeGraph.querySelector('.dataviz_plot-ts-cursor');
+        if (!activeCursor) return;
+
+        const transform = activeCursor.getAttribute('transform');
+        if (!transform) return;
+
+        const allCursors = document.querySelectorAll('.dataviz_plot-ts-cursor');
+        allCursors.forEach(cursor => {
+            if (cursor !== activeCursor) {
+                cursor.setAttribute('transform', transform);
+                cursor.style.visibility = 'visible';
+            }
+        });
+    }
+
+    function handleGraphMouseover(event) {
+        if (!cursorSyncEnabled) return;
+        const graphContainer = event.target.closest('[class*="graph"]');
+        if (!graphContainer) return;
+        activeGraph = graphContainer;
+    }
+
+    function handleGraphMouseout(event) {
+        if (!cursorSyncEnabled) return;
+        if (!event.relatedTarget?.closest('[class*="graph"]')) {
+            activeGraph = null;
+            const allCursors = document.querySelectorAll('.dataviz_plot-ts-cursor');
+            allCursors.forEach(cursor => {
+                cursor.style.visibility = 'hidden';
+            });
+        }
+    }
+
+    function createControls() {
         const container = document.createElement('span');
         container.className = 'druids_layout_flex druids_layout_flex--direction-row druids_layout_flex--align-items-center druids_layout_flex--justify-flex-start druids_layout_flex--wrap-nowrap druids_layout_flex--is-inline druids_layout_flex--has-legacy-gap';
 
@@ -45,19 +88,18 @@
         label.appendChild(labelSpan);
         container.appendChild(label);
 
-        // Select wrapper
+        // Column Select wrapper
         const selectWrapper = document.createElement('div');
         selectWrapper.className = 'druids_form_select-wrapper druids_form_select-wrapper--is-multi-line';
         selectWrapper.style.position = 'relative';
 
-        // Native-style button
+        // Button and dropdown setup (unchanged from original)
         const button = document.createElement('button');
         button.className = 'Select druids_form_select druids_form_select--xs druids_form_select--is-borderless druids_form_select--has-arrow has-value is-searchable Select--single is-closed';
         button.type = 'button';
         button.setAttribute('aria-label', 'Columns');
         button.setAttribute('data-dd-action-name', 'Select');
 
-        // Button inner structure
         const controlDiv = document.createElement('div');
         controlDiv.className = 'Select-control';
 
@@ -71,7 +113,6 @@
         valueLabel.className = 'Select-value-label';
         valueLabel.textContent = currentColumns;
 
-        // Native-style arrow
         const arrowZone = document.createElement('span');
         arrowZone.className = 'Select-arrow-zone';
         arrowZone.innerHTML = `
@@ -87,7 +128,7 @@
         controlDiv.appendChild(arrowZone);
         button.appendChild(controlDiv);
 
-        // Custom dropdown menu
+        // Dropdown menu
         const dropdownMenu = document.createElement('div');
         Object.assign(dropdownMenu.style, {
             display: 'none',
@@ -118,12 +159,8 @@
                 transition: 'background-color 0.2s ease'
             });
 
-            option.addEventListener('mouseover', () => {
-                option.style.backgroundColor = '#598acb';
-            });
-            option.addEventListener('mouseout', () => {
-                option.style.backgroundColor = '#1d1c1f';
-            });
+            option.addEventListener('mouseover', () => option.style.backgroundColor = '#598acb');
+            option.addEventListener('mouseout', () => option.style.backgroundColor = '#1d1c1f');
 
             option.addEventListener('click', () => {
                 currentColumns = i;
@@ -154,8 +191,43 @@
         selectWrapper.appendChild(dropdownMenu);
         container.appendChild(selectWrapper);
 
-        // Robust insertion logic
-        function insertDropdown() {
+        // Add cursor sync toggle
+        const toggleSwitch = document.createElement('button');
+        toggleSwitch.className = 'druids_form_action druids_form_action--is-basic druids_form_toggle-switch druids_form_toggle-switch--xs druids_form_toggle-switch--is-interactive druids_margin--left-sm';
+        toggleSwitch.setAttribute('type', 'button');
+        toggleSwitch.setAttribute('role', 'checkbox');
+        toggleSwitch.setAttribute('aria-checked', 'true');
+        toggleSwitch.setAttribute('aria-readonly', 'false');
+
+        toggleSwitch.innerHTML = `
+            <div class="druids_form_thumb-and-track druids_form_thumb-and-track--xs">
+                <input class="druids_form_thumb-and-track__input" type="checkbox" checked>
+                <label class="druids_form_thumb-and-track__track">
+                    <span class="druids_form_thumb-and-track__thumb druids_form_thumb-and-track__thumb--right"></span>
+                </label>
+            </div>
+            <label class="druids_form_toggle-switch__label">Sync Cursors</label>
+        `;
+
+        toggleSwitch.addEventListener('click', () => {
+            cursorSyncEnabled = !cursorSyncEnabled;
+            toggleSwitch.setAttribute('aria-checked', cursorSyncEnabled.toString());
+            const thumb = toggleSwitch.querySelector('.druids_form_thumb-and-track__thumb');
+            thumb.className = `druids_form_thumb-and-track__thumb druids_form_thumb-and-track__thumb--${cursorSyncEnabled ? 'right' : 'left'}`;
+            if (!cursorSyncEnabled) {
+                const allCursors = document.querySelectorAll('.dataviz_plot-ts-cursor');
+                allCursors.forEach(cursor => {
+                    if (cursor.style.visibility === 'visible') {
+                        cursor.style.visibility = 'hidden';
+                    }
+                });
+            }
+        });
+
+        container.appendChild(toggleSwitch);
+
+        // Insertion logic
+        function insertControls() {
             const reverseToggle = document.querySelector('.druids_form_toggle-switch');
             if (!reverseToggle) return;
 
@@ -169,10 +241,9 @@
             container.classList.add('dd-columns-selector');
         }
 
-        // Menu observer for dynamic UI changes
         menuObserver = new MutationObserver(() => {
             if (!document.querySelector('.dd-columns-selector')) {
-                insertDropdown();
+                insertControls();
             }
         });
 
@@ -181,17 +252,42 @@
             subtree: true
         });
 
-        // Initial insertion
-        insertDropdown();
+        insertControls();
+    }
+
+    // Initialize graph event listeners
+    function initGraphEvents() {
+        const graphs = document.querySelectorAll('[class*="graph"]');
+        graphs.forEach(graph => {
+            graph.addEventListener('mouseover', handleGraphMouseover);
+            graph.addEventListener('mouseout', handleGraphMouseout);
+            graph.addEventListener('mousemove', updateAllCursors);
+        });
     }
 
     // Initialize grid observer
     function initGridObserver() {
-        gridObserver = new MutationObserver(checkAndApplyColumns);
+        gridObserver = new MutationObserver((mutations) => {
+            checkAndApplyColumns();
+            mutations.forEach((mutation) => {
+                mutation.addedNodes.forEach((node) => {
+                    if (node.nodeType === 1) {
+                        const graphs = node.querySelectorAll('[class*="graph"]');
+                        graphs.forEach(graph => {
+                            graph.addEventListener('mouseover', handleGraphMouseover);
+                            graph.addEventListener('mouseout', handleGraphMouseout);
+                            graph.addEventListener('mousemove', updateAllCursors);
+                        });
+                    }
+                });
+            });
+        });
+
         gridObserver.observe(document.body, {
             childList: true,
             subtree: true
         });
+
         checkAndApplyColumns();
     }
 
@@ -204,7 +300,8 @@
     // Initialize everything
     function init() {
         cleanupObservers();
-        createColumnDropdown();
+        createControls();
+        initGraphEvents();
         initGridObserver();
     }
 
